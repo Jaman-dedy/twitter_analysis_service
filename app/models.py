@@ -1,36 +1,56 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from .database import Base
 
-class Tweet(Base):
-    __tablename__ = "tweets"
-
-    id = Column(Integer, primary_key=True, index=True)
-    tweet_id = Column(String, unique=True, index=True)
-    user_id = Column(String, index=True)
-    text = Column(String)
-    created_at = Column(DateTime)
-    lang = Column(String)
-    
-    # Add other relevant fields
-
 class User(Base):
     __tablename__ = "users"
-
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, unique=True, index=True)
     screen_name = Column(String)
     description = Column(String)
-    
-    # Add other relevant fields
+    last_updated = Column(DateTime)
+
+class Tweet(Base):
+    __tablename__ = "tweets"
+    id = Column(Integer, primary_key=True, index=True)
+    tweet_id = Column(String, unique=True, index=True)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    text = Column(String)
+    created_at = Column(DateTime)
+    lang = Column(String, index=True)
+    is_reply = Column(Boolean)
+    is_retweet = Column(Boolean)
+    reply_to_user_id = Column(String, index=True)
+    retweet_to_user_id = Column(String, index=True)
 
 class Hashtag(Base):
     __tablename__ = "hashtags"
-
     id = Column(Integer, primary_key=True, index=True)
     tweet_id = Column(String, ForeignKey("tweets.tweet_id"))
     hashtag = Column(String, index=True)
 
-    tweet = relationship("Tweet", back_populates="hashtags")
+class UserInteraction(Base):
+    __tablename__ = "user_interactions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    interacted_with_user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    reply_count = Column(Integer, default=0)
+    retweet_count = Column(Integer, default=0)
+    interaction_score = Column(Float)
 
-Tweet.hashtags = relationship("Hashtag", back_populates="tweet")
+    __table_args__ = (Index('idx_user_interaction', user_id, interacted_with_user_id),)
+
+class HashtagScore(Base):
+    __tablename__ = "hashtag_scores"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    hashtag = Column(String, index=True)
+    count = Column(Integer, default=0)
+
+    __table_args__ = (Index('idx_user_hashtag', user_id, hashtag),)
+
+class HashtagFrequency(Base):
+    __tablename__ = "hashtag_frequencies"
+    id = Column(Integer, primary_key=True, index=True)
+    hashtag = Column(String, unique=True, index=True)
+    frequency = Column(Integer, default=0)

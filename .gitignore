@@ -1,24 +1,19 @@
-# Python
+
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 
-# Virtual Environment
 venv/
 env/
 ENV/
 
-# PyCharm
 .idea/
 
-# VS Code
 .vscode/
 
-# Jupyter Notebook
 .ipynb_checkpoints
 
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
