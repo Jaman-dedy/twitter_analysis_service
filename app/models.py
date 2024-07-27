@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -38,16 +38,12 @@ class UserInteraction(Base):
     retweet_count = Column(Integer, default=0)
     interaction_score = Column(Float)
 
-    __table_args__ = (Index('idx_user_interaction', user_id, interacted_with_user_id),)
-
 class HashtagScore(Base):
     __tablename__ = "hashtag_scores"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, ForeignKey("users.user_id"), index=True)
     hashtag = Column(String, index=True)
     count = Column(Integer, default=0)
-
-    __table_args__ = (Index('idx_user_hashtag', user_id, hashtag),)
 
 class HashtagFrequency(Base):
     __tablename__ = "hashtag_frequencies"

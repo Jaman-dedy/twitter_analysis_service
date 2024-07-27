@@ -1,5 +1,7 @@
 import json
+import math
 from datetime import datetime
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from . import models, database
 import logging
@@ -17,9 +19,10 @@ def load_query2_ref(file_path: str) -> List[Dict]:
     with open(file_path, 'r') as f:
         return [json.loads(line) for line in f]
 
-# Assuming the files are in the project root
-POPULAR_HASHTAGS = load_popular_hashtags('popular_hashtags.txt')
-QUERY2_REF = load_query2_ref('query2_ref.txt')
+# Update file paths
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+POPULAR_HASHTAGS = load_popular_hashtags(os.path.join(base_dir, 'popular_hashtags.txt'))
+QUERY2_REF = load_query2_ref(os.path.join(base_dir, 'query2_ref.txt'))
 
 def process_tweet(db: Session, tweet_data: dict):
     user = upsert_user(db, tweet_data['user'])
@@ -56,9 +59,15 @@ def create_tweet(db: Session, tweet_data: dict, user_id: str):
         reply_to_user_id=str(tweet_data['in_reply_to_user_id']) if tweet_data['in_reply_to_user_id'] else None,
         retweet_to_user_id=str(tweet_data['retweeted_status']['user']['id']) if 'retweeted_status' in tweet_data else None
     )
-    db.add(tweet)
-    db.commit()
-    return tweet
+    try:
+        db.add(tweet)
+        db.commit()
+        return tweet
+    except IntegrityError:
+        db.rollback()
+        # If the tweet already exists, retrieve it from the database
+        existing_tweet = db.query(models.Tweet).filter(models.Tweet.tweet_id == str(tweet_data['id'])).first()
+        return existing_tweet
 
 def process_hashtags(db: Session, tweet_data: dict, tweet_id: str, user_id: str):
     hashtags = [hashtag['text'].lower() for hashtag in tweet_data['entities']['hashtags']]
@@ -90,7 +99,22 @@ def process_hashtags(db: Session, tweet_data: dict, tweet_id: str, user_id: str)
 def update_user_interactions(db: Session, tweet_data: dict, user_id: str):
     interaction_type = 'reply' if tweet_data['in_reply_to_user_id'] else 'retweet' if 'retweeted_status' in tweet_data else None
     if interaction_type:
-        interacted_with_id = str(tweet_data['in_reply_to_user_id'] or tweet_data['retweeted_status']['user']['id'])
+        if interaction_type == 'reply':
+            interacted_with_id = str(tweet_data['in_reply_to_user_id'])
+            # We don't have the full user object for replies, so we'll create a minimal one
+            interacted_with_user_data = {
+                'id': interacted_with_id,
+                'screen_name': 'unknown',  # We don't have this information for replies
+                'description': ''
+            }
+        else:  # retweet
+            interacted_with_id = str(tweet_data['retweeted_status']['user']['id'])
+            interacted_with_user_data = tweet_data['retweeted_status']['user']
+        
+        # Ensure both users exist
+        user = upsert_user(db, tweet_data['user'])
+        interacted_with_user = upsert_user(db, interacted_with_user_data)
+        
         interaction = db.query(models.UserInteraction).filter(
             models.UserInteraction.user_id == user_id,
             models.UserInteraction.interacted_with_user_id == interacted_with_id
@@ -121,14 +145,30 @@ def calculate_interaction_scores(db: Session):
 def etl_process():
     db = database.SessionLocal()
     try:
-        for tweet_data in QUERY2_REF:
-            process_tweet(db, tweet_data)
+        logger.info(f"Starting ETL process. Found {len(QUERY2_REF)} tweets to process.")
+        logger.info(f"Popular hashtags loaded: {len(POPULAR_HASHTAGS)}")
         
+        for i, tweet_data in enumerate(QUERY2_REF):
+            if i % 100 == 0:
+                logger.info(f"Processing tweet {i+1}: {tweet_data['id']}")
+            try:
+                process_tweet(db, tweet_data)
+            except Exception as e:
+                logger.error(f"Error processing tweet {tweet_data['id']}: {str(e)}")
+                continue  # Continue with the next tweet even if there's an error
+
         calculate_interaction_scores(db)
         
-        logger.info("ETL process completed successfully")
+        # Log final counts
+        user_count = db.query(models.User).count()
+        tweet_count = db.query(models.Tweet).count()
+        hashtag_count = db.query(models.Hashtag).count()
+        logger.info(f"ETL process completed. Users: {user_count}, Tweets: {tweet_count}, Hashtags: {hashtag_count}")
+
     except Exception as e:
         logger.error(f"Error during ETL process: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
     finally:
         db.close()
 

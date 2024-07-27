@@ -88,3 +88,7 @@ venv.bak/
 *.pem
 *.key
 *.crt
+
+# Large data files
+query2_ref.txt
+popular_hashtags.txt
