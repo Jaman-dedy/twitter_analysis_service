@@ -2,11 +2,14 @@ import json
 import math
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert
 from . import models, database
 import logging
 from typing import Set, List, Dict
 import os
+import traceback
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,123 +27,127 @@ base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POPULAR_HASHTAGS = load_popular_hashtags(os.path.join(base_dir, 'popular_hashtags.txt'))
 QUERY2_REF = load_query2_ref(os.path.join(base_dir, 'query2_ref.txt'))
 
-def process_tweet(db: Session, tweet_data: dict):
-    user = upsert_user(db, tweet_data['user'])
-    tweet = create_tweet(db, tweet_data, user.user_id)
-    process_hashtags(db, tweet_data, tweet.tweet_id, user.user_id)
-    update_user_interactions(db, tweet_data, user.user_id)
+def bulk_insert_or_update(db: Session, model, data, unique_fields):
+    if not data:  # If the data list is empty, return early
+        return
 
-def upsert_user(db: Session, user_data: dict):
-    user = db.query(models.User).filter(models.User.user_id == str(user_data['id'])).first()
-    if user:
-        user.screen_name = user_data['screen_name']
-        user.description = user_data.get('description', '')
-        user.last_updated = datetime.utcnow()
-    else:
-        user = models.User(
-            user_id=str(user_data['id']),
-            screen_name=user_data['screen_name'],
-            description=user_data.get('description', ''),
-            last_updated=datetime.utcnow()
+    table = model.__table__
+    stmt = insert(table).values(data)
+
+    primary_keys = [c.name for c in inspect(model).primary_key]
+    update_dict = {c.name: c for c in stmt.excluded if c.name not in unique_fields and c.name not in primary_keys}
+
+    if update_dict:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=unique_fields,
+            set_=update_dict
         )
-        db.add(user)
-    db.commit()
-    return user
+    else:
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=unique_fields
+        )
 
-def create_tweet(db: Session, tweet_data: dict, user_id: str):
-    tweet = models.Tweet(
-        tweet_id=str(tweet_data['id']),
-        user_id=user_id,
-        text=tweet_data['text'],
-        created_at=datetime.strptime(tweet_data['created_at'], '%a %b %d %H:%M:%S +0000 %Y'),
-        lang=tweet_data['lang'],
-        is_reply=tweet_data['in_reply_to_user_id'] is not None,
-        is_retweet='retweeted_status' in tweet_data,
-        reply_to_user_id=str(tweet_data['in_reply_to_user_id']) if tweet_data['in_reply_to_user_id'] else None,
-        retweet_to_user_id=str(tweet_data['retweeted_status']['user']['id']) if 'retweeted_status' in tweet_data else None
-    )
-    try:
-        db.add(tweet)
-        db.commit()
-        return tweet
-    except IntegrityError:
-        db.rollback()
-        # If the tweet already exists, retrieve it from the database
-        existing_tweet = db.query(models.Tweet).filter(models.Tweet.tweet_id == str(tweet_data['id'])).first()
-        return existing_tweet
+    db.execute(stmt)
 
-def process_hashtags(db: Session, tweet_data: dict, tweet_id: str, user_id: str):
-    hashtags = [hashtag['text'].lower() for hashtag in tweet_data['entities']['hashtags']]
-    for hashtag in hashtags:
-        db_hashtag = models.Hashtag(tweet_id=tweet_id, hashtag=hashtag)
-        db.add(db_hashtag)
+def process_tweets_batch(db: Session, tweets_batch: List[dict]):
+    users = {}
+    tweets = []
+    hashtags = []
+    hashtag_scores = {}
+    user_interactions = {}
+
+    for tweet_data in tweets_batch:
+        user_data = tweet_data['user']
+        user_id = str(user_data['id'])
         
-        if hashtag not in POPULAR_HASHTAGS:
-            hashtag_score = db.query(models.HashtagScore).filter(
-                models.HashtagScore.user_id == user_id,
-                models.HashtagScore.hashtag == hashtag
-            ).first()
-            
-            if hashtag_score:
-                hashtag_score.count += 1
-            else:
-                hashtag_score = models.HashtagScore(user_id=user_id, hashtag=hashtag, count=1)
-                db.add(hashtag_score)
-        
-        hashtag_freq = db.query(models.HashtagFrequency).filter(models.HashtagFrequency.hashtag == hashtag).first()
-        if hashtag_freq:
-            hashtag_freq.frequency += 1
-        else:
-            hashtag_freq = models.HashtagFrequency(hashtag=hashtag, frequency=1)
-            db.add(hashtag_freq)
-    
-    db.commit()
-
-def update_user_interactions(db: Session, tweet_data: dict, user_id: str):
-    interaction_type = 'reply' if tweet_data['in_reply_to_user_id'] else 'retweet' if 'retweeted_status' in tweet_data else None
-    if interaction_type:
-        if interaction_type == 'reply':
-            interacted_with_id = str(tweet_data['in_reply_to_user_id'])
-            # We don't have the full user object for replies, so we'll create a minimal one
-            interacted_with_user_data = {
-                'id': interacted_with_id,
-                'screen_name': 'unknown',  # We don't have this information for replies
-                'description': ''
+        # Only add user if we haven't seen it in this batch
+        if user_id not in users:
+            users[user_id] = {
+                'user_id': user_id,
+                'screen_name': user_data['screen_name'],
+                'description': user_data.get('description', ''),
+                'last_updated': datetime.utcnow()
             }
-        else:  # retweet
-            interacted_with_id = str(tweet_data['retweeted_status']['user']['id'])
-            interacted_with_user_data = tweet_data['retweeted_status']['user']
-        
-        # Ensure both users exist
-        user = upsert_user(db, tweet_data['user'])
-        interacted_with_user = upsert_user(db, interacted_with_user_data)
-        
-        interaction = db.query(models.UserInteraction).filter(
-            models.UserInteraction.user_id == user_id,
-            models.UserInteraction.interacted_with_user_id == interacted_with_id
-        ).first()
-        
-        if interaction:
-            if interaction_type == 'reply':
-                interaction.reply_count += 1
-            else:
-                interaction.retweet_count += 1
-        else:
-            interaction = models.UserInteraction(
-                user_id=user_id,
-                interacted_with_user_id=interacted_with_id,
-                reply_count=1 if interaction_type == 'reply' else 0,
-                retweet_count=1 if interaction_type == 'retweet' else 0
-            )
-            db.add(interaction)
-        
-        db.commit()
 
-def calculate_interaction_scores(db: Session):
-    interactions = db.query(models.UserInteraction).all()
-    for interaction in interactions:
-        interaction.interaction_score = math.log(1 + 2 * interaction.reply_count + interaction.retweet_count)
-    db.commit()
+        tweet = {
+            'tweet_id': str(tweet_data['id']),
+            'user_id': user_id,
+            'text': tweet_data['text'],
+            'created_at': datetime.strptime(tweet_data['created_at'], '%a %b %d %H:%M:%S +0000 %Y'),
+            'lang': tweet_data['lang'],
+            'is_reply': tweet_data['in_reply_to_user_id'] is not None,
+            'is_retweet': 'retweeted_status' in tweet_data,
+            'reply_to_user_id': str(tweet_data['in_reply_to_user_id']) if tweet_data['in_reply_to_user_id'] else None,
+            'retweet_to_user_id': str(tweet_data['retweeted_status']['user']['id']) if 'retweeted_status' in tweet_data else None
+        }
+        tweets.append(tweet)
+
+        # Process hashtags
+        for hashtag_data in tweet_data['entities']['hashtags']:
+            hashtag = hashtag_data['text'].lower()
+            hashtags.append({'tweet_id': str(tweet_data['id']), 'hashtag': hashtag})
+
+            if hashtag not in POPULAR_HASHTAGS:
+                key = (user_id, hashtag)
+                if key not in hashtag_scores:
+                    hashtag_scores[key] = {'user_id': user_id, 'hashtag': hashtag, 'count': 0}
+                hashtag_scores[key]['count'] += 1
+
+        # Process user interactions
+        interaction_type = 'reply' if tweet_data['in_reply_to_user_id'] else 'retweet' if 'retweeted_status' in tweet_data else None
+        if interaction_type:
+            if interaction_type == 'reply':
+                interacted_with_id = str(tweet_data['in_reply_to_user_id'])
+            else:  # retweet
+                interacted_with_id = str(tweet_data['retweeted_status']['user']['id'])
+            
+            # Ensure the interacted_with user is in the users dict
+            if interacted_with_id not in users:
+                users[interacted_with_id] = {
+                    'user_id': interacted_with_id,
+                    'screen_name': tweet_data['retweeted_status']['user']['screen_name'] if 'retweeted_status' in tweet_data else '',
+                    'description': tweet_data['retweeted_status']['user'].get('description', '') if 'retweeted_status' in tweet_data else '',
+                    'last_updated': datetime.utcnow()
+                }
+            
+            key = (user_id, interacted_with_id)
+            if key not in user_interactions:
+                user_interactions[key] = {'reply_count': 0, 'retweet_count': 0}
+            user_interactions[key][f'{interaction_type}_count'] += 1
+
+    # Convert users dict to list for bulk insert
+    users_list = list(users.values())
+
+    # Convert hashtag_scores dict to list
+    hashtag_scores_list = list(hashtag_scores.values())
+
+    # Bulk insert or update
+    bulk_insert_or_update(db, models.User, users_list, ['user_id'])
+    bulk_insert_or_update(db, models.Tweet, tweets, ['tweet_id'])
+    bulk_insert_or_update(db, models.Hashtag, hashtags, ['tweet_id', 'hashtag'])
+    bulk_insert_or_update(db, models.HashtagScore, hashtag_scores_list, ['user_id', 'hashtag'])
+
+    # Process user interactions
+    interactions = []
+    for (user_id, interacted_with_user_id), counts in user_interactions.items():
+        interactions.append({
+            'user_id': user_id,
+            'interacted_with_user_id': interacted_with_user_id,
+            'reply_count': counts['reply_count'],
+            'retweet_count': counts['retweet_count'],
+            'interaction_score': math.log(1 + 2 * counts['reply_count'] + counts['retweet_count'])
+        })
+    bulk_insert_or_update(db, models.UserInteraction, interactions, ['user_id', 'interacted_with_user_id'])
+
+    # Update hashtag frequencies
+    hashtag_freq = {}
+    for h in hashtags:
+        if h['hashtag'] not in hashtag_freq:
+            hashtag_freq[h['hashtag']] = 0
+        hashtag_freq[h['hashtag']] += 1
+    
+    hashtag_freq_list = [{'hashtag': h, 'frequency': f} for h, f in hashtag_freq.items()]
+    bulk_insert_or_update(db, models.HashtagFrequency, hashtag_freq_list, ['hashtag'])
 
 def etl_process():
     db = database.SessionLocal()
@@ -148,17 +155,19 @@ def etl_process():
         logger.info(f"Starting ETL process. Found {len(QUERY2_REF)} tweets to process.")
         logger.info(f"Popular hashtags loaded: {len(POPULAR_HASHTAGS)}")
         
-        for i, tweet_data in enumerate(QUERY2_REF):
-            if i % 100 == 0:
-                logger.info(f"Processing tweet {i+1}: {tweet_data['id']}")
+        batch_size = 1000
+        for i in range(0, len(QUERY2_REF), batch_size):
+            batch = QUERY2_REF[i:i+batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1}")
             try:
-                process_tweet(db, tweet_data)
+                process_tweets_batch(db, batch)
+                db.commit()
+                logger.info(f"Batch {i//batch_size + 1} processed successfully")
             except Exception as e:
-                logger.error(f"Error processing tweet {tweet_data['id']}: {str(e)}")
-                continue  # Continue with the next tweet even if there's an error
+                db.rollback()
+                logger.error(f"Error processing batch {i//batch_size + 1}: {str(e)}")
+                logger.error(traceback.format_exc())
 
-        calculate_interaction_scores(db)
-        
         # Log final counts
         user_count = db.query(models.User).count()
         tweet_count = db.query(models.Tweet).count()
@@ -167,7 +176,6 @@ def etl_process():
 
     except Exception as e:
         logger.error(f"Error during ETL process: {str(e)}")
-        import traceback
         logger.error(traceback.format_exc())
     finally:
         db.close()

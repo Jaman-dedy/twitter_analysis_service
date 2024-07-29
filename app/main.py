@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 from fastapi import FastAPI, Depends, HTTPException, Query
 import logging
 from sqlalchemy.orm import Session
@@ -69,6 +74,12 @@ def run_etl():
         import traceback
         logger.error(traceback.format_exc())
     logger.info("ETL process command completed")
+
+@app.post("/clear-database")
+def clear_database(db: Session = Depends(get_db)):
+    from .database import clear_all_tables
+    clear_all_tables(db)
+    return {"message": "All data has been cleared from the database"}
 
 app.cli = click.Group()
 app.cli.add_command(run_etl)
