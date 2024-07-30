@@ -5,7 +5,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
-from . import models, database
+
+from .models import models
+from . import database
 import logging
 from typing import Set, List, Dict
 import os

@@ -1,13 +1,13 @@
 import logging
 from sqlalchemy import text
-from .etl import etl_process, QUERY2_REF, POPULAR_HASHTAGS
-from .database import engine, SessionLocal
-from . import models
+from app.db.session import engine, SessionLocal
+from app.models import models
+from .etl_process import etl_process, QUERY2_REF, POPULAR_HASHTAGS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-if __name__ == "__main__":
+def run_etl():
     logger.info("Creating database tables...")
     models.Base.metadata.create_all(bind=engine)
     
@@ -33,3 +33,6 @@ if __name__ == "__main__":
         import traceback
         logger.error(traceback.format_exc())
     logger.info("ETL process finished.")
+
+if __name__ == "__main__":
+    run_etl()

@@ -6,3 +6,5 @@ pydantic
 click
 requests
 python-dotenv
+alembic
+pydantic-settings
