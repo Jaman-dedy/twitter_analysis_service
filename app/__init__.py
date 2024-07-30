@@ -1,3 +1,1 @@
-from .main import app
-
-__all__ = ["app"]
+from .main import app, init_db

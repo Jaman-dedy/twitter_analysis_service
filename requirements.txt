@@ -9,3 +9,5 @@ python-dotenv
 alembic
 pydantic-settings
 tqdm
+pytest
+pytest-cov
