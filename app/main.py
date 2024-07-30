@@ -5,19 +5,26 @@ from app.api import api_router
 from app.db.base import Base
 from app.db.session import engine
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def create_app():
-    # Initialize FastAPI app
     app = FastAPI(
-        title=settings.PROJECT_NAME,
-        version=settings.PROJECT_VERSION,
-        description="A web service for analyzing Twitter data"
-    )
+    title=settings.PROJECT_NAME,
+    description="A web service for analyzing Twitter data and providing user recommendations.",
+    version=settings.PROJECT_VERSION,
+    terms_of_service="http://sls/terms/",
+    contact={
+        "name": "Lead SE challenge",
+        "url": "http://sls.com/contact/",
+        "email": "team@example.com",
+    },
+    license_info={
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
+    },
+)
 
-    # Include API router
     app.include_router(api_router, prefix="/api")
 
     @app.get("/")

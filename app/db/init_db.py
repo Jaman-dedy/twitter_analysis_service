@@ -16,7 +16,6 @@ def test_db_connection():
         db.close()
 
 def initialize_db():
-    # Add any initialization logic here
     pass
 
 if __name__ == "__main__":

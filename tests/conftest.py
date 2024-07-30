@@ -6,7 +6,6 @@ from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 import subprocess
 
-# Add the project root to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
 
@@ -16,19 +15,15 @@ from app.config import settings
 
 @pytest.fixture(scope="session", autouse=True)
 def create_test_database():
-    # Create the test database
     subprocess.run(["python", f"{project_root}/create_test_db.py"], check=True)
     
-    # Set up the database
     test_db_url = f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}_test"
     engine = create_engine(test_db_url)
     
-    # Create tables
     Base.metadata.create_all(bind=engine)
     
     yield engine
     
-    # Drop the test database after all tests are done
     Base.metadata.drop_all(bind=engine)
     conn = engine.connect()
     conn.execute("COMMIT")

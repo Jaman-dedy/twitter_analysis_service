@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
     API_V1_STR: str = "/api/v1"
-    BACKEND_CORS_ORIGINS: list = ["*"]  # In production, replace with actual origins
+    BACKEND_CORS_ORIGINS: list = ["*"]
 
     class Config:
         case_sensitive = True

@@ -24,13 +24,12 @@ def load_query2_ref(file_path: str) -> List[Dict]:
     with open(file_path, 'r') as f:
         return [json.loads(line) for line in f]
 
-# Update file paths
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POPULAR_HASHTAGS = load_popular_hashtags(os.path.join(base_dir, 'popular_hashtags.txt'))
 QUERY2_REF = load_query2_ref(os.path.join(base_dir, 'query2_ref.txt'))
 
 def bulk_insert_or_update(db: Session, model, data, unique_fields):
-    if not data:  # If the data list is empty, return early
+    if not data:
         return
 
     table = model.__table__
@@ -62,7 +61,6 @@ def process_tweets_batch(db: Session, tweets_batch: List[dict]):
         user_data = tweet_data['user']
         user_id = str(user_data['id'])
         
-        # Only add user if we haven't seen it in this batch
         if user_id not in users:
             users[user_id] = {
                 'user_id': user_id,
@@ -84,7 +82,6 @@ def process_tweets_batch(db: Session, tweets_batch: List[dict]):
         }
         tweets.append(tweet)
 
-        # Process hashtags
         for hashtag_data in tweet_data['entities']['hashtags']:
             hashtag = hashtag_data['text'].lower()
             hashtags.append({'tweet_id': str(tweet_data['id']), 'hashtag': hashtag})
@@ -95,15 +92,13 @@ def process_tweets_batch(db: Session, tweets_batch: List[dict]):
                     hashtag_scores[key] = {'user_id': user_id, 'hashtag': hashtag, 'count': 0}
                 hashtag_scores[key]['count'] += 1
 
-        # Process user interactions
         interaction_type = 'reply' if tweet_data['in_reply_to_user_id'] else 'retweet' if 'retweeted_status' in tweet_data else None
         if interaction_type:
             if interaction_type == 'reply':
                 interacted_with_id = str(tweet_data['in_reply_to_user_id'])
-            else:  # retweet
+            else: 
                 interacted_with_id = str(tweet_data['retweeted_status']['user']['id'])
             
-            # Ensure the interacted_with user is in the users dict
             if interacted_with_id not in users:
                 users[interacted_with_id] = {
                     'user_id': interacted_with_id,
@@ -117,19 +112,15 @@ def process_tweets_batch(db: Session, tweets_batch: List[dict]):
                 user_interactions[key] = {'reply_count': 0, 'retweet_count': 0}
             user_interactions[key][f'{interaction_type}_count'] += 1
 
-    # Convert users dict to list for bulk insert
     users_list = list(users.values())
 
-    # Convert hashtag_scores dict to list
     hashtag_scores_list = list(hashtag_scores.values())
 
-    # Bulk insert or update
     bulk_insert_or_update(db, models.User, users_list, ['user_id'])
     bulk_insert_or_update(db, models.Tweet, tweets, ['tweet_id'])
     bulk_insert_or_update(db, models.Hashtag, hashtags, ['tweet_id', 'hashtag'])
     bulk_insert_or_update(db, models.HashtagScore, hashtag_scores_list, ['user_id', 'hashtag'])
 
-    # Process user interactions
     interactions = []
     for (user_id, interacted_with_user_id), counts in user_interactions.items():
         interactions.append({
@@ -141,7 +132,6 @@ def process_tweets_batch(db: Session, tweets_batch: List[dict]):
         })
     bulk_insert_or_update(db, models.UserInteraction, interactions, ['user_id', 'interacted_with_user_id'])
 
-    # Update hashtag frequencies
     hashtag_freq = {}
     for h in hashtags:
         if h['hashtag'] not in hashtag_freq:
@@ -175,7 +165,6 @@ def etl_process():
         end_time = time.time()
         total_duration = end_time - start_time
 
-        # Log final counts and timing
         user_count = db.query(models.User).count()
         tweet_count = db.query(models.Tweet).count()
         hashtag_count = db.query(models.Hashtag).count()

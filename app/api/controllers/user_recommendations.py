@@ -37,7 +37,7 @@ def user_recommendation(
         
         response_content = f"{settings.TEAM_ID},{settings.AWS_ACCOUNT_ID}\n" + "\n".join(formatted_recommendations)
         
-        return response_content.rstrip('\n')  # Remove trailing newline if exists
+        return response_content.rstrip('\n')
 
     except InvalidParameterError as e:
         raise HTTPException(status_code=400, detail=str(e))
