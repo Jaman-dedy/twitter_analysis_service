@@ -22,6 +22,7 @@ This project is a web service for analyzing Twitter data. It provides APIs for u
 - PostgreSQL
 
 ## Project Structure
+```
 twitter_analysis_service/
 ├── app/
 │   ├── api/
@@ -46,6 +47,7 @@ twitter_analysis_service/
 ├── requirements.txt
 ├── run_tests.sh
 └── README.md
+```
 
 ## Setup
 
