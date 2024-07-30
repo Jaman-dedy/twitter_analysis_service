@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.crud import crud
-from app.schemas import UserRecommendation
-from app.core.exceptions import InvalidParameterError
+from app.crud import get_user_recommendations
+from fastapi.responses import PlainTextResponse
 from urllib.parse import unquote
 from typing import List
-from app.crud import get_user_recommendations
+from app.schemas import UserRecommendation
+from app.config import settings
+import traceback
 
 router = APIRouter()
+
+class InvalidParameterError(Exception):
+    pass
 
 @router.get("/q2", response_class=PlainTextResponse)
 def user_recommendation(
@@ -21,22 +24,23 @@ def user_recommendation(
 ) -> str:
     try:
         if type not in ['reply', 'retweet', 'both']:
-            raise InvalidParameterError("Invalid type parameter")
+            raise InvalidParameterError("Invalid type parameter. Must be 'reply', 'retweet', or 'both'.")
         
         decoded_phrase = unquote(phrase)
         
-        recommendations: List[UserRecommendation] = get_user_recommendations(db, user_id, type, decoded_phrase, hashtag)
+        recommendations = get_user_recommendations(db, user_id, type, decoded_phrase, hashtag)
         
         formatted_recommendations = [
-            f"{rec.user_id}\t{rec.screen_name}\t{rec.description}\t{rec.latest_tweet}"
+            f"{rec['user_id']}\t{rec['screen_name']}\t{rec['description']}\t{rec['latest_tweet']}"
             for rec in recommendations
         ]
         
-        response_content = "TeamCoolCloud,1234-0000-0001\n" + "\n".join(formatted_recommendations)
+        response_content = f"{settings.TEAM_ID},{settings.AWS_ACCOUNT_ID}\n" + "\n".join(formatted_recommendations)
         
-        return response_content
+        return response_content.rstrip('\n')  # Remove trailing newline if exists
 
     except InvalidParameterError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        error_msg = f"An error occurred: {str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_msg)

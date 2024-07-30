@@ -6,8 +6,8 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 
-from .models import models
-from . import database
+from app.models import models
+from app.db.session import SessionLocal
 import logging
 from typing import Set, List, Dict
 import os
@@ -152,7 +152,7 @@ def process_tweets_batch(db: Session, tweets_batch: List[dict]):
     bulk_insert_or_update(db, models.HashtagFrequency, hashtag_freq_list, ['hashtag'])
 
 def etl_process():
-    db = database.SessionLocal()
+    db = SessionLocal()
     try:
         logger.info(f"Starting ETL process. Found {len(QUERY2_REF)} tweets to process.")
         logger.info(f"Popular hashtags loaded: {len(POPULAR_HASHTAGS)}")

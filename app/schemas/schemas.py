@@ -15,7 +15,7 @@ class User(UserBase):
     last_updated: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class TweetBase(BaseModel):
     tweet_id: str
@@ -35,7 +35,7 @@ class Tweet(TweetBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class HashtagBase(BaseModel):
     tweet_id: str
@@ -48,7 +48,7 @@ class Hashtag(HashtagBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserInteractionBase(BaseModel):
     user_id: str
@@ -64,7 +64,7 @@ class UserInteraction(UserInteractionBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class HashtagScoreBase(BaseModel):
     user_id: str
@@ -78,7 +78,7 @@ class HashtagScore(HashtagScoreBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class HashtagFrequencyBase(BaseModel):
     hashtag: str
@@ -91,7 +91,7 @@ class HashtagFrequency(HashtagFrequencyBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserRecommendation(BaseModel):
     user_id: str
@@ -101,4 +101,4 @@ class UserRecommendation(BaseModel):
     score: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True

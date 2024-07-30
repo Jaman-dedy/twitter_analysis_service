@@ -94,7 +94,7 @@
 
 import logging
 from fastapi import FastAPI
-from app.api.routes import router as api_router
+from app.api import api_router
 from app.config import settings
 from app.db.session import engine
 from app.models import models
@@ -107,15 +107,23 @@ logger = logging.getLogger(__name__)
 models.Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
-app = FastAPI(title=settings.PROJECT_NAME, version=settings.PROJECT_VERSION)
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.PROJECT_VERSION,
+    description="A web service for analyzing Twitter data"
+)
 
-# Include API router
-app.include_router(api_router)
+# Include API router with a prefix
+app.include_router(api_router, prefix="/api")
 
 # Root endpoint
 @app.get("/")
 def read_root():
-    return {"message": f"Welcome to the {settings.PROJECT_NAME}"}
+    return {
+        "message": f"Welcome to the {settings.PROJECT_NAME}",
+        "version": settings.PROJECT_VERSION,
+        "api_docs": "/docs"
+    }
 
 if __name__ == "__main__":
     import uvicorn

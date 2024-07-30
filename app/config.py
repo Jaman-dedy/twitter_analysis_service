@@ -7,6 +7,8 @@ load_dotenv()
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Twitter Analysis Service"
     PROJECT_VERSION: str = "1.0.0"
+    TEAM_ID: str = "TeamCoolCloud"
+    AWS_ACCOUNT_ID: str = "1234-0000-0001"
 
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "user")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "password")
