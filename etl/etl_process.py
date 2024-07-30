@@ -1,10 +1,10 @@
 import json
 import math
 from datetime import datetime
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
+import time
 
 from app.models import models
 from app.db.session import SessionLocal
@@ -153,32 +153,45 @@ def process_tweets_batch(db: Session, tweets_batch: List[dict]):
 
 def etl_process():
     db = SessionLocal()
+    start_time = time.time()
     try:
-        logger.info(f"Starting ETL process. Found {len(QUERY2_REF)} tweets to process.")
-        logger.info(f"Popular hashtags loaded: {len(POPULAR_HASHTAGS)}")
+        total_tweets = len(QUERY2_REF)
+        logger.info(f"Starting ETL process. Found {total_tweets} tweets to process.")
         
         batch_size = 1000
-        for i in range(0, len(QUERY2_REF), batch_size):
+        for i in range(0, total_tweets, batch_size):
+            batch_start = time.time()
             batch = QUERY2_REF[i:i+batch_size]
-            logger.info(f"Processing batch {i//batch_size + 1}")
             try:
                 process_tweets_batch(db, batch)
                 db.commit()
-                logger.info(f"Batch {i//batch_size + 1} processed successfully")
+                batch_end = time.time()
+                batch_duration = batch_end - batch_start
+                logger.info(f"Processed batch {i//batch_size + 1}/{(total_tweets-1)//batch_size + 1} in {batch_duration:.2f} seconds")
             except Exception as e:
                 db.rollback()
                 logger.error(f"Error processing batch {i//batch_size + 1}: {str(e)}")
-                logger.error(traceback.format_exc())
 
-        # Log final counts
+        end_time = time.time()
+        total_duration = end_time - start_time
+
+        # Log final counts and timing
         user_count = db.query(models.User).count()
         tweet_count = db.query(models.Tweet).count()
         hashtag_count = db.query(models.Hashtag).count()
-        logger.info(f"ETL process completed. Users: {user_count}, Tweets: {tweet_count}, Hashtags: {hashtag_count}")
+        logger.info(f"ETL process completed in {total_duration:.2f} seconds.")
+        logger.info(f"Users: {user_count}, Tweets: {tweet_count}, Hashtags: {hashtag_count}")
+
+        return {
+            "total_duration": total_duration,
+            "user_count": user_count,
+            "tweet_count": tweet_count,
+            "hashtag_count": hashtag_count
+        }
 
     except Exception as e:
         logger.error(f"Error during ETL process: {str(e)}")
-        logger.error(traceback.format_exc())
+        return {"error": str(e)}
     finally:
         db.close()
 

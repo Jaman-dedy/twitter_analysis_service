@@ -5,8 +5,11 @@ from app.db.init_db import test_db_connection
 from app.models import models
 from app.db.crud import clear_all_tables
 from etl.run_etl import run_etl
+from etl.etl_process import etl_process
 
 router = APIRouter()
+
+etl_result = None
 
 @router.get("/test-db-connection")
 def test_db_connection_route():
@@ -36,11 +39,27 @@ def clear_database(db: Session = Depends(get_db)):
 
 @router.post("/run-etl")
 async def run_etl_endpoint(background_tasks: BackgroundTasks):
-    background_tasks.add_task(run_etl)
+    global etl_result
+    
+    def run_etl_task():
+        global etl_result
+        etl_result = etl_process()
+
+    background_tasks.add_task(run_etl_task)
     return {"message": "ETL process started in the background"}
 
 @router.get("/etl-status")
-def etl_status():
-    # Implement a way to check the status of the ETL process
-    # This could be a simple flag in a database or a more complex status tracking system
-    return {"status": "ETL status here"}
+async def get_etl_status():
+    global etl_result
+    if etl_result is None:
+        return {"status": "ETL not started or still in progress"}
+    elif "error" in etl_result:
+        return {"status": "ETL failed", "error": etl_result["error"]}
+    else:
+        return {
+            "status": "ETL completed",
+            "total_duration": f"{etl_result['total_duration']:.2f} seconds",
+            "users_processed": etl_result["user_count"],
+            "tweets_processed": etl_result["tweet_count"],
+            "hashtags_processed": etl_result["hashtag_count"]
+        }

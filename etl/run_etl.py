@@ -3,6 +3,7 @@ from sqlalchemy import text
 from app.db.session import engine, SessionLocal
 from app.models import models
 from .etl_process import etl_process, QUERY2_REF, POPULAR_HASHTAGS
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,9 +26,12 @@ def run_etl():
         db.close()
     
     logger.info("Starting ETL process...")
+    start_time = datetime.now()
     try:
         etl_process()
-        logger.info("ETL process completed successfully.")
+        end_time = datetime.now()
+        duration = end_time - start_time
+        logger.info(f"ETL process completed successfully in {duration}.")
     except Exception as e:
         logger.error(f"Error during ETL process: {str(e)}")
         import traceback
